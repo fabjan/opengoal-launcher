@@ -9,7 +9,7 @@ use tauri::{Manager, RunEvent};
 use util::file::create_dir;
 
 use backtrace::Backtrace;
-use std::{fs, io::Write};
+use std::io::Write;
 
 mod commands;
 mod config;
@@ -119,11 +119,8 @@ fn main() {
 
       // Load the config (or initialize it with defaults)
       let config_dir = app.path_resolver().app_config_dir();
-      if let Some(dir) = config_dir.clone() {
-        if !dir.exists() {
-          log::info!("Configuration directory doesn't exist, creating \"{}\"", dir.display());
-          fs::create_dir_all(dir)?;
-        }
+      if let Some(dir) = &config_dir {
+        create_dir(dir)?;
       }
       let launcher_config = config::LauncherConfig::load_config(config_dir);
 

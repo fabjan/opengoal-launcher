@@ -1,8 +1,21 @@
-use crate::{config::LauncherConfig, util::file::delete_dir};
+use crate::{
+  config::{ConfigError, LauncherConfig},
+  util::file::delete_dir,
+};
 use tauri::Manager;
 use wgpu::InstanceDescriptor;
 
 use super::CommandError;
+
+impl From<ConfigError> for CommandError {
+  fn from(err: ConfigError) -> CommandError {
+    match err {
+      ConfigError::Configuration(msg) => CommandError::Configuration(msg),
+      ConfigError::IO(err) => CommandError::Configuration(format!("IO Error: {err}")),
+      ConfigError::JSONError(err) => CommandError::Configuration(format!("JSON Error: {err}")),
+    }
+  }
+}
 
 #[tauri::command]
 pub async fn has_old_data_directory(app_handle: tauri::AppHandle) -> Result<bool, CommandError> {
@@ -25,9 +38,7 @@ pub async fn reset_to_defaults(
   config: tauri::State<'_, tokio::sync::Mutex<LauncherConfig>>,
 ) -> Result<(), CommandError> {
   let mut config_lock = config.lock().await;
-  config_lock.reset_to_defaults().map_err(|_| {
-    CommandError::Configuration("Unable to reset configuration to defaults".to_owned())
-  })?;
+  config_lock.reset_to_defaults()?;
   Ok(())
 }
 
@@ -48,9 +59,8 @@ pub async fn set_install_directory(
   new_dir: String,
 ) -> Result<Option<String>, CommandError> {
   let mut config_lock = config.lock().await;
-  config_lock
-    .set_install_directory(new_dir)
-    .map_err(|_| CommandError::Configuration("Unable to persist installation directory".to_owned()))
+  let error_message = config_lock.set_install_directory(new_dir)?;
+  Ok(error_message)
 }
 
 #[tauri::command]
@@ -75,10 +85,7 @@ pub async fn is_avx_requirement_met(
       } else {
         config_lock.requirements.avx = Some(false);
       }
-      config_lock.save_config().map_err(|err| {
-        log::error!("Unable to persist avx requirement change {}", err);
-        CommandError::Configuration("Unable to persist avx requirement change".to_owned())
-      })?;
+      config_lock.save_config()?;
       Ok(config_lock.requirements.avx.unwrap_or(false))
     }
     Some(val) => Ok(val),
@@ -123,9 +130,7 @@ pub async fn is_opengl_requirement_met(
         .await
       {
         None => {
-          config_lock.set_opengl_requirement_met(None).map_err(|_| {
-            CommandError::Configuration("Unable to persist opengl requirement change".to_owned())
-          })?;
+          config_lock.set_opengl_requirement_met(None)?;
           return Err(CommandError::Configuration(
             "Unable to request GPU adapter to check for OpenGL support".to_owned(),
           ));
@@ -152,24 +157,16 @@ pub async fn is_opengl_requirement_met(
         .await
       {
         Err(err) => {
-          config_lock
-            .set_opengl_requirement_met(Some(false))
-            .map_err(|_| {
-              CommandError::Configuration("Unable to persist opengl requirement change".to_owned())
-            })?;
+          config_lock.set_opengl_requirement_met(Some(false))?;
           return Err(CommandError::Configuration(format!(
             "Unable to request GPU device with adequate OpenGL support - {err:?}",
           )));
         }
-        Ok(device) => device,
+        Ok(_) => (),
       };
 
       // If we didn't support the above limits, we would have returned an error already
-      config_lock
-        .set_opengl_requirement_met(Some(true))
-        .map_err(|_| {
-          CommandError::Configuration("Unable to persist opengl requirement change".to_owned())
-        })?;
+      config_lock.set_opengl_requirement_met(Some(true))?;
       Ok(Some(true))
     }
     Some(val) => Ok(Some(val)),
@@ -183,11 +180,7 @@ pub async fn finalize_installation(
   game_name: String,
 ) -> Result<(), CommandError> {
   let mut config_lock = config.lock().await;
-  config_lock
-    .update_installed_game_version(&game_name, true)
-    .map_err(|_| {
-      CommandError::Configuration("Unable to persist game installation status".to_owned())
-    })?;
+  config_lock.update_installed_game_version(&game_name, true)?;
   app_handle.emit_all("gameInstalled", {})?;
   Ok(())
 }
@@ -208,17 +201,7 @@ pub async fn is_game_installed(
   let version_folder = config_lock.game_install_version_folder(&game_name);
 
   if version.is_empty() || version_folder.is_empty() {
-    config_lock
-      .update_installed_game_version(&game_name, false)
-      .map_err(|err| {
-        log::error!(
-          "Unable to mark partially installed game as uninstalled {}",
-          err
-        );
-        CommandError::Configuration(
-          "Unable to mark partially installed game as uninstalled".to_owned(),
-        )
-      })?;
+    config_lock.update_installed_game_version(&game_name, false)?;
     return Ok(false);
   }
 
@@ -250,16 +233,8 @@ pub async fn save_active_version_change(
   new_active_version: String,
 ) -> Result<(), CommandError> {
   let mut config_lock = config.lock().await;
-  config_lock
-    .set_active_version_folder(version_folder)
-    .map_err(|_| {
-      CommandError::Configuration("Unable to persist active version folder change".to_owned())
-    })?;
-  config_lock
-    .set_active_version(new_active_version)
-    .map_err(|_| {
-      CommandError::Configuration("Unable to persist active version change".to_owned())
-    })?;
+  config_lock.set_active_version_folder(version_folder)?;
+  config_lock.set_active_version(new_active_version)?;
   Ok(())
 }
 
@@ -292,10 +267,7 @@ pub async fn set_locale(
   config: tauri::State<'_, tokio::sync::Mutex<LauncherConfig>>,
   locale: String,
 ) -> Result<(), CommandError> {
-  let mut config_lock = config.lock().await;
-  config_lock
-    .set_locale(locale)
-    .map_err(|_| CommandError::Configuration("Unable to persist locale change".to_owned()))?;
+  config.lock().await.set_locale(locale)?;
   Ok(())
 }
 
@@ -316,8 +288,6 @@ pub async fn set_bypass_requirements(
   bypass: bool,
 ) -> Result<(), CommandError> {
   let mut config_lock = config.lock().await;
-  config_lock.set_bypass_requirements(bypass).map_err(|_| {
-    CommandError::Configuration("Unable to persist bypass requirements change".to_owned())
-  })?;
+  config_lock.set_bypass_requirements(bypass)?;
   Ok(())
 }

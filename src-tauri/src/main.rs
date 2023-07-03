@@ -9,7 +9,7 @@ use tauri::{Manager, RunEvent};
 use util::file::create_dir;
 
 use backtrace::Backtrace;
-use std::io::Write;
+use std::{fs, io::Write};
 
 mod commands;
 mod config;
@@ -118,15 +118,22 @@ fn main() {
       };
 
       // Load the config (or initialize it with defaults)
-      //
+      let config_dir = app.path_resolver().app_config_dir();
+      if let Some(dir) = config_dir.clone() {
+        if !dir.exists() {
+          log::info!("Configuration directory doesn't exist, creating \"{}\"", dir.display());
+          fs::create_dir_all(dir)?;
+        }
+      }
+      let launcher_config = config::LauncherConfig::load_config(config_dir);
+
       // Tauri is pretty cool - you can "manage" as many instances of structs as you want (so long as it's only 1 per type)
       // Then commands can retrieve said managed structs via `tauri::State`
       //
       // This allows us to avoid hacky globals, and pass around information (in this case, the config)
       // to the relevant places
-      app.manage(tokio::sync::Mutex::new(
-        config::LauncherConfig::load_config(app.path_resolver().app_config_dir()),
-      ));
+      app.manage(tokio::sync::Mutex::new(launcher_config));
+
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![

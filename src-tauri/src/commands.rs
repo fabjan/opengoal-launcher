@@ -46,9 +46,20 @@ impl Serialize for CommandError {
 #[derive(Debug, Serialize)]
 pub struct CmdErr(String);
 
+impl std::error::Error for CmdErr {}
+
+impl std::fmt::Display for CmdErr {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self.0)
+  }
+}
+
 impl From<anyhow::Error> for CmdErr {
   fn from(err: anyhow::Error) -> Self {
-    CmdErr(err.to_string())
+    match err.source() {
+      Some(source) => CmdErr(format!("{}: {}", err, source)),
+      None => CmdErr(err.to_string()),
+    }
   }
 }
 

@@ -218,7 +218,7 @@ pub async fn ensure_active_version_still_exists(
     config_lock.active_version_folder, config_lock.active_version
   );
 
-  return Err(CmdErr::new("test error, please ignore"));
+  Err(CmdErr::new("BLAM!")).context("Cannot frogblast the ventcore")?;
 
   let active_version_folder = config_lock.active_version_folder.as_ref();
   let active_version = config_lock.active_version.as_ref();

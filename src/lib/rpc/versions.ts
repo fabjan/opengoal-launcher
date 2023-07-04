@@ -1,87 +1,98 @@
 import { toastStore } from "$lib/stores/ToastStore";
-import { invoke } from "@tauri-apps/api/tauri";
-import { exceptionLog } from "./logging";
+import { invoke, type InvokeArgs } from "@tauri-apps/api/tauri";
+import { errorLog, exceptionLog } from "./logging";
 
 export type VersionFolders = null | "official" | "unofficial" | "devel";
 
 export async function listDownloadedVersions(
   folder: VersionFolders
 ): Promise<string[]> {
-  try {
-    return await invoke("list_downloaded_versions", { versionFolder: folder });
-  } catch (e) {
-    exceptionLog("Unable to list out downloaded versions", e);
-    return [];
-  }
+  return await invoke_and_log(
+    "list_downloaded_versions",
+    () => [],
+    { versionFolder: folder }
+  );
 }
 
 export async function downloadOfficialVersion(
   version: String,
   url: String
 ): Promise<boolean> {
-  try {
-    await invoke("download_version", {
+  let success = await invoke_and_log(
+    "download_version",
+    () => false,
+    {
       version: version,
       versionFolder: "official",
       url: url,
-    });
-  } catch (e) {
-    exceptionLog("Unable to download official version", e);
-    toastStore.makeToast(e, "error");
-    return false;
-  }
-  return true;
+    }
+  );
+
+  return success !== false;
 }
 
 export async function removeVersion(
   version: String,
   versionFolder: String
 ): Promise<boolean> {
-  try {
-    await invoke("remove_version", {
+  let success = await invoke_and_log(
+    "remove_version",
+    () => false,
+    {
       version: version,
       versionFolder: versionFolder,
-    });
-  } catch (e) {
-    exceptionLog("Unable to remove version", e);
-    toastStore.makeToast("Unable to remove version", "error");
-    return false;
-  }
-  return true;
+    }
+  );
+
+  return success !== false;
 }
 
 export async function openVersionFolder(folder: VersionFolders) {
-  try {
-    return await invoke("go_to_version_folder", { versionFolder: folder });
-  } catch (e) {
-    exceptionLog("Unable to open version folder", e);
-    toastStore.makeToast("Unable to open version folder", "error");
-  }
+  return await invoke_and_log(
+    "open_version_folder",
+    () => undefined,
+    { versionFolder: folder }
+  );
 }
 
 export async function getActiveVersion(): Promise<string | null> {
-  try {
-    return await invoke("get_active_tooling_version", {});
-  } catch (e) {
-    exceptionLog("Unable to get active version", e);
-    return null;
-  }
+  return await invoke_and_log(
+    "get_active_tooling_version",
+    () => null,
+  );
 }
 
 export async function getActiveVersionFolder(): Promise<VersionFolders> {
-  try {
-    return await invoke("get_active_tooling_version_folder", {});
-  } catch (e) {
-    exceptionLog("Unable to get active version type", e);
-    return null;
-  }
+  return await invoke_and_log(
+    "get_active_tooling_version_folder",
+    () => null,
+  );
 }
 
 export async function ensureActiveVersionStillExists(): Promise<boolean> {
+  return await invoke_and_log(
+    "ensure_active_version_still_exists",
+    () => false,
+  );
+}
+
+async function invoke_and_log<T>(
+  method: string,
+  handle: (e: any) => T,
+  args?: InvokeArgs,
+): Promise<T> {
   try {
-    return await invoke("ensure_active_version_still_exists", {});
+    return await invoke(method, args);
   } catch (e) {
-    exceptionLog("Unable to check or remove broken active version", e);
-    return false;
+    if (e.name && e.message) {
+      toastStore.makeToast(e.message, "error");
+      errorLog(`Error invoking ${method}: (${e.name}) ${e.message}`);
+    } else if (typeof e === "string") {
+      toastStore.makeToast(e, "error");
+      errorLog(`Error invoking ${method}: ${e}`);
+    } else {
+      exceptionLog(`Error invoking ${method}`, e);
+    }
+    return handle(e);
   }
 }

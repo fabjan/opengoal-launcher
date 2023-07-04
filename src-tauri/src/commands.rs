@@ -20,8 +20,8 @@ pub enum CommandError {
   TauriEvent(#[from] tauri::Error),
   #[error("{0}")]
   Installation(String),
-  #[error("{0}")]
-  VersionManagement(String),
+  //#[error("{0}")]
+  //VersionManagement(String),
   #[error("{0}")]
   GameManagement(String),
   #[error("{0}")]
@@ -40,5 +40,20 @@ impl Serialize for CommandError {
     S: Serializer,
   {
     serializer.serialize_str(self.to_string().as_ref())
+  }
+}
+
+#[derive(Debug, Serialize)]
+pub struct CmdErr(String);
+
+impl From<anyhow::Error> for CmdErr {
+  fn from(err: anyhow::Error) -> Self {
+    CmdErr(err.to_string())
+  }
+}
+
+impl CmdErr {
+  pub fn new(err: impl ToString) -> Self {
+    CmdErr(err.to_string())
   }
 }
